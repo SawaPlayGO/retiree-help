@@ -7,11 +7,11 @@ class UserUpdateSchema(BaseModel):
 
 
 class GetUserSchema(BaseModel):
-    user_id: int
+    id: int
     username: str
     email: str
     description: str | None = None
-    photo_path: str | None = None
+    avatar_url: str | None = None
     role: str
     created_at: datetime
     updated_at: datetime

@@ -19,4 +19,5 @@ dependencies = [
     "ruff>=0.15.12",
     "pydantic-settings>=2.14.1",
     "python-dotenv>=1.2.2",
+    "minio>=7.2.20",
 ]

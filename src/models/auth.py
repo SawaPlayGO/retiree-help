@@ -19,6 +19,7 @@ class User(Base):
     updated_at = Column(
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
+    avatar_url = Column(String(255), nullable=True)
 
     def __repr__(self):
-        return f"<User(id={self.id}, username={self.username}, description={self.description}, email={self.email}, role={self.role})>"
+        return f"<User(id={self.id}, username={self.username}, description={self.description}, email={self.email}, role={self.role}, avatar_url={self.avatar_url})>"

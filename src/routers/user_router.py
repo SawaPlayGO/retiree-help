@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 
 from src.schemas.auth import TokenPayloadSchema
 from src.schemas.user import UserUpdateSchema, GetUserSchema
 from src.services.auth_service import AuthService
 from src.services.user_service import UserService
 from src.utils.enums import Role
-from src.utils.exceptions import UserNotFoundException, UsernameAlreadyExists
+from src.utils.exceptions import UserNotFoundException
 from src.utils.uow import UnitOfWork, get_uow
 
 router = APIRouter(prefix="/user", tags=["users"])
@@ -38,10 +38,36 @@ def update_user(
     return user
 
 
+@router.get("/me", status_code=status.HTTP_200_OK, response_model=GetUserSchema)
+def get_user_me(
+    payload: TokenPayloadSchema = Depends(
+        AuthService.require_roles(Role.EXECUTOR, Role.CUSTOMER, Role.ADMIN)
+    ),
+    uow: UnitOfWork = Depends(get_uow),
+):
+    """
+    Get user information by user_id.
+
+    Permission: Executor, Customer, Admin
+
+    Returns:
+    - User information
+    """
+    try:
+        user = UserService(uow=uow).get_user_by_user_id(user_id=payload.user_id)
+    except UserNotFoundException as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        ) from e
+    return user
+
+
 @router.get("/{user_id}", status_code=status.HTTP_200_OK)
 def get_user(
     user_id: int,
-    payload: TokenPayloadSchema = Depends(AuthService.require_roles(Role.EXECUTOR, Role.CUSTOMER, Role.ADMIN)),
+    payload: TokenPayloadSchema = Depends(
+        AuthService.require_roles(Role.EXECUTOR, Role.CUSTOMER, Role.ADMIN)
+    ),
     uow: UnitOfWork = Depends(get_uow),
 ):
     """

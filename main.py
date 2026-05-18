@@ -6,7 +6,9 @@ from src.config import settings
 from src.routers import auth_router
 from src.routers import user_router
 from src.routers import order_router
-from src.database import db_manager
+from src.routers import bid_router
+from src.routers import image_router
+from src.database import db_manager, s3_manager
 
 
 @asynccontextmanager
@@ -17,6 +19,7 @@ async def lifespan(app: FastAPI):
             "DATABASE_URL is not set. Please set it in the environment variables."
         )
     db_manager.init_db()
+    s3_manager.init_bucket()
     yield
 
 
@@ -30,6 +33,8 @@ app = FastAPI(
 app.include_router(auth_router.router)
 app.include_router(user_router.router)
 app.include_router(order_router.router)
+app.include_router(bid_router.router)
+app.include_router(image_router.router)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

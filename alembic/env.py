@@ -6,8 +6,9 @@ from sqlalchemy import engine_from_config, pool
 from src.config import settings
 from src.database import Base
 
-from src.models.auth import User # noqa
-from src.models.order import Order # noqa
+from src.models.auth import User  # noqa
+from src.models.order import Order  # noqa
+from src.models.bid import Bid  # noqa
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

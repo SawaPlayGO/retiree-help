@@ -1,6 +1,8 @@
 from typing import Callable
-from src.database import db_manager
+from src.database import db_manager, s3_manager
 from src.repositories.auth_repository import AuthRepository
+from src.repositories.bid_repository import BidRepository
+from src.repositories.image_repository import ImageRepository
 from src.repositories.order_repository import OrderRepository
 from src.repositories.user_repository import UserRepository
 
@@ -29,6 +31,10 @@ class UnitOfWork:
         self.auth_repository = AuthRepository(session=self.session)
         self.user_repository = UserRepository(session=self.session)
         self.order_repository = OrderRepository(session=self.session)
+        self.bid_repository = BidRepository(session=self.session)
+        self.image_repository = ImageRepository(
+            session=self.session, object_storage_client=s3_manager.client
+        )
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit context, commit/rollback transaction, and close session

@@ -9,6 +9,7 @@ class Order(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    executor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     title = Column(String, nullable=False)
     description = Column(String, nullable=False)
     latitude = Column(Float, nullable=False)
