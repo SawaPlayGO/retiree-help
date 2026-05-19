@@ -123,6 +123,66 @@ class OrderService:
         )
         return ResponseOrder.model_validate(order)
 
+    def send_for_revision(self, order_id: int, payload: TokenPayloadSchema) -> ResponseOrder:
+        """Send order work back for revision by customer
+        
+        Only order owner (customer) can send for revision.
+        Order must be AWAITING_APPROVAL.
+        """
+        order = self.uow.order_repository.get_order_by_id(order_id=order_id)
+        if not order:
+            raise OrderNotFoundException()
+        
+        # Verify it's the order owner
+        if order.owner_id != payload.user_id:
+            raise OrderNotEnoughPermissions()
+        
+        # Order must be awaiting approval
+        if order.status != OrderStatus.AWAITING_APPROVAL:
+            raise OrderNotAwaitingApprovalException()
+        
+        order = self.uow.order_repository.update_order_status(
+            order_id=order_id, status=OrderStatus.NEEDS_REVISION
+        )
+        return ResponseOrder.model_validate(order)
+
+    def resubmit_revised_work(self, order_id: int, payload: TokenPayloadSchema) -> ResponseOrder:
+        """Resubmit revised work by executor after being sent for revision
+        
+        Only executor assigned to this order can resubmit revised work.
+        Order must be NEEDS_REVISION.
+        """
+        order = self.uow.order_repository.get_order_by_id(order_id=order_id)
+        if not order:
+            raise OrderNotFoundException()
+        
+        # Verify it's the assigned executor
+        if order.executor_id != payload.user_id:
+            raise OrderNotEnoughPermissions()
+        
+        # Order must be in needs revision state
+        if order.status != OrderStatus.NEEDS_REVISION:
+            raise OrderNotAwaitingApprovalException()
+        
+        order = self.uow.order_repository.update_order_status(
+            order_id=order_id, status=OrderStatus.AWAITING_APPROVAL
+        )
+        return ResponseOrder.model_validate(order)
+
+    def cancel_order(self, order_id: int) -> ResponseOrder:
+        """Cancel an order (admin only)
+        
+        Cancels an order. Only admins can perform this action.
+        """
+        order = self.uow.order_repository.get_order_by_id(order_id=order_id)
+        if not order:
+            raise OrderNotFoundException()
+        
+        order = self.uow.order_repository.update_order_status(
+            order_id=order_id, status=OrderStatus.CANCELLED
+        )
+        return ResponseOrder.model_validate(order)
+
     def get_all_orders(self, skip: int = 0, limit: int = 10) -> dict:
         orders, total = self.uow.order_repository.get_all_orders(skip=skip, limit=limit)
         return {

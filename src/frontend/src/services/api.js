@@ -55,6 +55,12 @@ export const orderAPI = {
     apiClient.put(`/order/${orderId}/complete`),
   approveCompletion: (orderId) =>
     apiClient.put(`/order/${orderId}/approve`),
+  sendForRevision: (orderId) =>
+    apiClient.put(`/order/${orderId}/send-revision`),
+  resubmitRevision: (orderId) =>
+    apiClient.put(`/order/${orderId}/resubmit-revision`),
+  cancelOrder: (orderId) =>
+    apiClient.put(`/order/${orderId}/cancel`),
 }
 
 // Bid API

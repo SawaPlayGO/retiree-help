@@ -3,6 +3,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import CustomerProfile from './pages/CustomerProfile'
+import CreateOrder from './pages/CreateOrder'
 import ExecutorProfile from './pages/ExecutorProfile'
 import HomeExecutor from './pages/HomeExecutor'
 import OrderDetail from './pages/OrderDetail'
@@ -21,6 +22,22 @@ export default function App() {
         element={
           <ProtectedRoute requiredRole="CUSTOMER">
             <CustomerProfile />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/customer-profile/:userId"
+        element={
+          <ProtectedRoute>
+            <CustomerProfile />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/create-order"
+        element={
+          <ProtectedRoute requiredRole="CUSTOMER">
+            <CreateOrder />
           </ProtectedRoute>
         }
       />

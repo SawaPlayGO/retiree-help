@@ -314,3 +314,106 @@ def approve_completion(
             detail="Order is not awaiting approval",
         ) from e
     return order
+
+
+@router.put("/{order_id}/send-revision", response_model=ResponseOrder)
+def send_for_revision(
+    order_id: int,
+    payload: TokenPayloadSchema = Depends(AuthService.require_roles(Role.CUSTOMER)),
+    uow: UnitOfWork = Depends(get_uow),
+):
+    """
+    Send order work back for revision by customer.
+    
+    The order owner indicates that the work needs corrections/revisions.
+    This changes order status to NEEDS_REVISION.
+    
+    Permission: Customer (order owner)
+    
+    Returns:
+    - Updated order information
+    """
+    try:
+        order = OrderService(uow=uow).send_for_revision(
+            order_id=order_id, payload=payload
+        )
+    except OrderNotFoundException as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        ) from e
+    except OrderNotEnoughPermissions as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not the order owner",
+        ) from e
+    except OrderNotAwaitingApprovalException as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Order is not awaiting approval",
+        ) from e
+    return order
+
+
+@router.put("/{order_id}/resubmit-revision", response_model=ResponseOrder)
+def resubmit_revised_work(
+    order_id: int,
+    payload: TokenPayloadSchema = Depends(AuthService.require_roles(Role.EXECUTOR)),
+    uow: UnitOfWork = Depends(get_uow),
+):
+    """
+    Resubmit revised work by executor after being sent for revision.
+    
+    The assigned executor resubmits the work after making revisions.
+    This changes order status from NEEDS_REVISION to AWAITING_APPROVAL.
+    
+    Permission: Executor (assigned to the order)
+    
+    Returns:
+    - Updated order information
+    """
+    try:
+        order = OrderService(uow=uow).resubmit_revised_work(
+            order_id=order_id, payload=payload
+        )
+    except OrderNotFoundException as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        ) from e
+    except OrderNotEnoughPermissions as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not the assigned executor for this order",
+        ) from e
+    except OrderNotAwaitingApprovalException as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Order is not awaiting revision",
+        ) from e
+    return order
+
+
+@router.put("/{order_id}/cancel", response_model=ResponseOrder)
+def cancel_order(
+    order_id: int,
+    payload: TokenPayloadSchema = Depends(AuthService.require_roles(Role.ADMIN)),
+    uow: UnitOfWork = Depends(get_uow),
+):
+    """
+    Cancel an order.
+    
+    Only admin can cancel orders. This changes order status to CANCELLED.
+    
+    Permission: Admin only
+    
+    Returns:
+    - Updated order information
+    """
+    try:
+        order = OrderService(uow=uow).cancel_order(
+            order_id=order_id
+        )
+    except OrderNotFoundException as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        ) from e
+    return order

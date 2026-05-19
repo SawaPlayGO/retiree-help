@@ -1,7 +1,98 @@
-import { useState, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { orderAPI, bidAPI, userAPI, imageAPI } from '../services/api'
+import StatusProgressWidget from '../components/StatusProgressWidget'
+import OrderDetailsCard from '../components/OrderDetailsCard'
+import MapDisplay from '../components/MapDisplay'
+import NotificationPanel from '../components/NotificationPanel'
+
+// CSS for animations
+const animationStyles = `
+  @keyframes pulse-wave {
+    0% {
+      box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+    }
+    70% {
+      box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    }
+  }
+  
+  .pulse-wave {
+    animation: pulse-wave 2s infinite;
+  }
+  
+  @keyframes slide-in {
+    from {
+      transform: scaleX(0);
+      transform-origin: left;
+    }
+    to {
+      transform: scaleX(1);
+      transform-origin: left;
+    }
+  }
+  
+  .progress-line-active {
+    animation: slide-in 0.6s ease-out;
+  }
+
+  @keyframes slide-in-right {
+    from {
+      transform: translateX(400px);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-slide-in {
+    animation: slide-in-right 0.3s ease-out;
+  }
+`
+
+// Add styles to document
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style')
+  style.textContent = animationStyles
+  if (!document.head.querySelector('style[data-order-detail]')) {
+    style.setAttribute('data-order-detail', 'true')
+    document.head.appendChild(style)
+  }
+}
+
+// Helper function to fix MinIO URL port
+const fixAvatarUrl = (url) => {
+  if (!url) return null
+  let fixedUrl = url
+  // Replace frontend port 5731 with MinIO port 9000
+  fixedUrl = fixedUrl.replace(':5731/', ':9000/')
+  // Ensure http:// prefix exists
+  if (!fixedUrl.startsWith('http://') && !fixedUrl.startsWith('https://')) {
+    fixedUrl = 'http://' + fixedUrl
+  }
+  console.log('Converted avatar URL from', url, 'to', fixedUrl)
+  return fixedUrl
+}
+
+// Helper function to fix image URL (same as avatar URL)
+const fixImageUrl = (url) => {
+  if (!url) return null
+  let fixedUrl = url
+  // Replace frontend port 5731 with MinIO port 9000
+  fixedUrl = fixedUrl.replace(':5731/', ':9000/')
+  // Ensure http:// prefix exists
+  if (!fixedUrl.startsWith('http://') && !fixedUrl.startsWith('https://')) {
+    fixedUrl = 'http://' + fixedUrl
+  }
+  console.log('Converted image URL from', url, 'to', fixedUrl)
+  return fixedUrl
+}
 
 export default function OrderDetail() {
   const { orderId } = useParams()
@@ -16,6 +107,21 @@ export default function OrderDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedBidId, setSelectedBidId] = useState(null)
+  const [bidComment, setBidComment] = useState('')
+  const [submittingBid, setSubmittingBid] = useState(false)
+  const [executorHasBid, setExecutorHasBid] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
+  const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  const [notifications, setNotifications] = useState([])
+
+  const addNotification = (message, type = 'info') => {
+    const id = Date.now()
+    setNotifications((prev) => [...prev, { id, message, type }])
+  }
+
+  const removeNotification = (id) => {
+    setNotifications((prev) => prev.filter((notif) => notif.id !== id))
+  }
 
   useEffect(() => {
     loadOrder()
@@ -30,9 +136,8 @@ export default function OrderDetail() {
       try {
         const customerResponse = await userAPI.getUser(orderResponse.data.owner_id)
         if (customerResponse.data.avatar_url) {
-          customerResponse.data.avatar_url = imageAPI.transformAvatarUrl(
-            customerResponse.data.avatar_url,
-            orderResponse.data.owner_id
+          customerResponse.data.avatar_url = fixAvatarUrl(
+            customerResponse.data.avatar_url
           )
         }
         setCustomer(customerResponse.data)
@@ -45,9 +150,8 @@ export default function OrderDetail() {
         try {
           const executorResponse = await userAPI.getUser(orderResponse.data.executor_id)
           if (executorResponse.data.avatar_url) {
-            executorResponse.data.avatar_url = imageAPI.transformAvatarUrl(
-              executorResponse.data.avatar_url,
-              orderResponse.data.executor_id
+            executorResponse.data.avatar_url = fixAvatarUrl(
+              executorResponse.data.avatar_url
             )
           }
           setExecutor(executorResponse.data)
@@ -68,9 +172,8 @@ export default function OrderDetail() {
             try {
               const executorResponse = await userAPI.getUser(bid.owner_id)
               if (executorResponse.data.avatar_url) {
-                executorResponse.data.avatar_url = imageAPI.transformAvatarUrl(
-                  executorResponse.data.avatar_url,
-                  bid.owner_id
+                executorResponse.data.avatar_url = fixAvatarUrl(
+                  executorResponse.data.avatar_url
                 )
               }
               executors[bid.owner_id] = executorResponse.data
@@ -81,6 +184,17 @@ export default function OrderDetail() {
           setBidExecutors(executors)
         } catch (err) {
           console.error('Failed to load bids:', err)
+        }
+      }
+
+      // Check if executor has already bid on this order
+      if (user?.role === 'EXECUTOR' && orderResponse.data.status === 'OPEN') {
+        try {
+          const bidsResponse = await bidAPI.getBidsByOrder(orderId)
+          const hasExistingBid = bidsResponse.data.some(bid => bid.owner_id === user.id)
+          setExecutorHasBid(hasExistingBid)
+        } catch (err) {
+          console.error('Failed to check executor bid:', err)
         }
       }
     } catch (err) {
@@ -100,10 +214,13 @@ export default function OrderDetail() {
 
     try {
       await orderAPI.assignExecutor(order.id, executorId)
-      alert('Исполнитель выбран!')
+      addNotification('Исполнитель выбран!', 'success')
       navigate('/customer-profile')
     } catch (error) {
-      alert(error.response?.data?.detail || 'Ошибка при выборе исполнителя')
+      addNotification(
+        error.response?.data?.detail || 'Ошибка при выборе исполнителя',
+        'error'
+      )
     }
   }
 
@@ -113,9 +230,9 @@ export default function OrderDetail() {
     try {
       await orderAPI.completeWork(order.id)
       setOrder({ ...order, status: 'AWAITING_APPROVAL' })
-      alert('Работа отправлена на проверку')
+      addNotification('Работа отправлена на проверку', 'success')
     } catch (error) {
-      alert(error.response?.data?.detail || 'Ошибка')
+      addNotification(error.response?.data?.detail || 'Ошибка', 'error')
     }
   }
 
@@ -125,9 +242,58 @@ export default function OrderDetail() {
     try {
       await orderAPI.approveCompletion(order.id)
       setOrder({ ...order, status: 'COMPLETED' })
-      alert('Работа одобрена!')
+      addNotification('Работа одобрена!', 'success')
     } catch (error) {
-      alert(error.response?.data?.detail || 'Ошибка')
+      addNotification(error.response?.data?.detail || 'Ошибка', 'error')
+    }
+  }
+
+  const handleSendForRevision = async () => {
+    if (!order) return
+
+    try {
+      await orderAPI.sendForRevision(order.id)
+      setOrder({ ...order, status: 'NEEDS_REVISION' })
+      addNotification('Заказ отправлен на доработку', 'success')
+    } catch (error) {
+      addNotification(
+        error.response?.data?.detail || 'Ошибка при отправке на доработку',
+        'error'
+      )
+    }
+  }
+
+  const handleResubmitRevision = async () => {
+    if (!order) return
+
+    try {
+      await orderAPI.resubmitRevision(order.id)
+      setOrder({ ...order, status: 'AWAITING_APPROVAL' })
+      addNotification('Работа переотправлена на проверку', 'success')
+    } catch (error) {
+      addNotification(
+        error.response?.data?.detail || 'Ошибка при переотправке работы',
+        'error'
+      )
+    }
+  }
+
+  const handleSubmitBid = async () => {
+    if (!order || !bidComment.trim()) return
+
+    setSubmittingBid(true)
+    try {
+      await bidAPI.createBid(order.id, bidComment)
+      setBidComment('')
+      setExecutorHasBid(true)
+      addNotification('Ставка отправлена!', 'success')
+    } catch (error) {
+      addNotification(
+        error.response?.data?.detail || 'Ошибка при отправке ставки',
+        'error'
+      )
+    } finally {
+      setSubmittingBid(false)
     }
   }
 
@@ -139,8 +305,12 @@ export default function OrderDetail() {
         return 'bg-blue-100 text-blue-800'
       case 'AWAITING_APPROVAL':
         return 'bg-orange-100 text-orange-800'
+      case 'NEEDS_REVISION':
+        return 'bg-red-100 text-red-800'
       case 'COMPLETED':
         return 'bg-green-100 text-green-800'
+      case 'CANCELLED':
+        return 'bg-gray-200 text-gray-700'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -151,9 +321,68 @@ export default function OrderDetail() {
       OPEN: 'Открыт',
       IN_PROGRESS: 'В прогрессе',
       AWAITING_APPROVAL: 'Ожидает одобрения',
+      NEEDS_REVISION: 'Требует доработки',
       COMPLETED: 'Завершён',
+      CANCELLED: 'Отменён',
     }
     return labels[status] || status
+  }
+
+  const openGallery = (index) => {
+    setCurrentImageIndex(index)
+    setGalleryOpen(true)
+  }
+
+  const closeGallery = () => {
+    setGalleryOpen(false)
+  }
+
+  const goToPreviousImage = () => {
+    if (order?.image_urls) {
+      setCurrentImageIndex((prev) =>
+        prev === 0 ? order.image_urls.length - 1 : prev - 1
+      )
+    }
+  }
+
+  const goToNextImage = () => {
+    if (order?.image_urls) {
+      setCurrentImageIndex((prev) =>
+        prev === order.image_urls.length - 1 ? 0 : prev + 1
+      )
+    }
+  }
+
+  const handleKeyDown = (e) => {
+    if (!galleryOpen) return
+    if (e.key === 'ArrowLeft') goToPreviousImage()
+    if (e.key === 'ArrowRight') goToNextImage()
+    if (e.key === 'Escape') closeGallery()
+  }
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [galleryOpen, order?.image_urls])
+
+  const getStatusProgress = () => {
+    const statuses = [
+      { key: 'OPEN', label: 'Открыт', icon: '📋' },
+      { key: 'IN_PROGRESS', label: 'В работе', icon: '⚙️' },
+      { key: 'AWAITING_APPROVAL', label: 'На проверке', icon: '👀' },
+      { key: 'COMPLETED', label: 'Завершён', icon: '✓' },
+    ]
+
+    // NEEDS_REVISION shows as going back to IN_PROGRESS (index 1)
+    let currentIndex
+    if (order.status === 'NEEDS_REVISION') {
+      currentIndex = 1
+    } else {
+      currentIndex = statuses.findIndex(s => s.key === order.status)
+      currentIndex = currentIndex === -1 ? 0 : currentIndex
+    }
+
+    return { statuses, currentIndex }
   }
 
   if (loading) {
@@ -184,6 +413,7 @@ export default function OrderDetail() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <NotificationPanel notifications={notifications} onRemove={removeNotification} />
       {/* Header */}
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 py-6 flex justify-between items-center">
@@ -208,62 +438,104 @@ export default function OrderDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Order Details */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Order Info */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">{order.title}</h2>
-                  <p className="text-gray-600 mt-2">{order.description}</p>
-                </div>
-                <span
-                  className={`text-sm font-semibold px-4 py-2 rounded-full ${getStatusColor(
-                    order.status
-                  )}`}
-                >
-                  {getStatusLabel(order.status)}
-                </span>
-              </div>
+            {/* Order Details Card */}
+            <OrderDetailsCard
+              order={order}
+              user={user}
+              onCompleteWork={handleCompleteWork}
+              onResubmitRevision={handleResubmitRevision}
+              onApproveWork={handleApproveWork}
+              onSendForRevision={handleSendForRevision}
+            />
 
-              <div className="grid grid-cols-2 gap-4 pt-4 border-t">
-                <div>
-                  <p className="text-sm text-gray-600">Координаты</p>
-                  <p className="font-medium">
-                    {order.latitude.toFixed(4)}, {order.longitude.toFixed(4)}
+            {/* Status Progress Widget */}
+            <StatusProgressWidget order={order} />
+
+            {/* Location Map */}
+            {order && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">📍 Местоположение</h3>
+                <MapDisplay latitude={order.latitude} longitude={order.longitude} />
+              </div>
+            )}
+
+            {/* Images Section */}
+            {order.image_urls && order.image_urls.length > 0 && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-4">Фотографии заказа</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {order.image_urls.map((imageUrl, idx) => (
+                    <div
+                      key={idx}
+                      className="relative group cursor-pointer"
+                      onClick={() => openGallery(idx)}
+                    >
+                      <img
+                        src={fixImageUrl(imageUrl)}
+                        alt={`Order image ${idx + 1}`}
+                        className="w-full h-32 object-cover rounded-lg group-hover:opacity-75 transition"
+                        onError={(e) => {
+                          console.error('Image failed to load:', imageUrl)
+                          e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%23e5e7eb" width="100" height="100"/%3E%3Ctext x="50" y="50" font-size="12" text-anchor="middle" dy=".3em" fill="%239ca3af"%3EError%3C/text%3E%3C/svg%3E'
+                        }}
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition bg-black bg-opacity-30">
+                        <span className="text-white text-2xl">🔍</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Image Gallery Modal */}
+            {galleryOpen && order?.image_urls && order.image_urls.length > 0 && (
+              <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center">
+                {/* Close Button */}
+                <button
+                  onClick={closeGallery}
+                  className="absolute top-4 right-4 text-white text-3xl hover:text-gray-300 transition"
+                >
+                  ✕
+                </button>
+
+                {/* Main Image */}
+                <div className="flex items-center justify-center w-full h-full px-4">
+                  <button
+                    onClick={goToPreviousImage}
+                    className="absolute left-4 text-white text-4xl hover:text-gray-300 transition p-2 hover:bg-white hover:bg-opacity-10 rounded"
+                  >
+                    ‹
+                  </button>
+
+                  <img
+                    src={fixImageUrl(order.image_urls[currentImageIndex])}
+                    alt={`Gallery image ${currentImageIndex + 1}`}
+                    className="max-w-5xl max-h-screen object-contain"
+                    onError={(e) => {
+                      e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%23404040" width="100" height="100"/%3E%3Ctext x="50" y="50" font-size="12" text-anchor="middle" dy=".3em" fill="%23808080"%3EError%3C/text%3E%3C/svg%3E'
+                    }}
+                  />
+
+                  <button
+                    onClick={goToNextImage}
+                    className="absolute right-4 text-white text-4xl hover:text-gray-300 transition p-2 hover:bg-white hover:bg-opacity-10 rounded"
+                  >
+                    ›
+                  </button>
+                </div>
+
+                {/* Image Counter */}
+                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-center">
+                  <p className="text-lg font-medium">
+                    {currentImageIndex + 1} / {order.image_urls.length}
+                  </p>
+                  <p className="text-sm text-gray-300 mt-1">
+                    Используй ← → или стрелки клавиатуры, ESC для закрытия
                   </p>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">ID заказа</p>
-                  <p className="font-medium">{order.id}</p>
-                </div>
               </div>
-
-              {/* Status-specific buttons */}
-              {user?.role === 'EXECUTOR' && order.status === 'IN_PROGRESS' && (
-                <button
-                  onClick={handleCompleteWork}
-                  className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition"
-                >
-                  Отправить на проверку
-                </button>
-              )}
-
-              {user?.role === 'CUSTOMER' && order.status === 'AWAITING_APPROVAL' && (
-                <div className="mt-4 space-y-2">
-                  <button
-                    onClick={handleApproveWork}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-lg transition"
-                  >
-                    ✓ Принять работу
-                  </button>
-                  <button
-                    className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-medium py-2 rounded-lg transition cursor-not-allowed opacity-50"
-                    disabled
-                  >
-                    ⟳ Отправить на доработку
-                  </button>
-                </div>
-              )}
-            </div>
+            )}
 
             {/* Bids Section */}
             {user?.role === 'CUSTOMER' && order.status === 'OPEN' && (
@@ -378,26 +650,34 @@ export default function OrderDetail() {
                   </div>
                 )}
 
-                {order.images && order.images.length > 0 && (
-                  <div>
-                    <p className="text-xs uppercase text-gray-600 font-semibold mb-2">
-                      Изображения
+                {/* Executor Bid Form */}
+                {user?.role === 'EXECUTOR' && order.status === 'OPEN' && (
+                  <div className="border-t pt-4">
+                    <p className="text-xs uppercase text-gray-600 font-semibold mb-3">
+                      Создать ставку
                     </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {order.images.map((img, idx) => (
-                        <div key={idx} className="relative">
-                          <img
-                            src={img.image_url}
-                            alt="Order"
-                            className="w-full h-20 object-cover rounded"
-                            onError={(e) => {
-                              console.error('Image failed to load:', img.image_url)
-                              e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%23e5e7eb" width="100" height="100"/%3E%3Ctext x="50" y="50" font-size="10" text-anchor="middle" dy=".3em" fill="%239ca3af"%3ENo image%3C/text%3E%3C/svg%3E'
-                            }}
-                          />
-                        </div>
-                      ))}
-                    </div>
+                    {executorHasBid ? (
+                      <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-700">
+                        ✓ Вы уже отправили ставку на этот заказ
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <textarea
+                          value={bidComment}
+                          onChange={(e) => setBidComment(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          placeholder="Ваш комментарий..."
+                          rows="4"
+                        />
+                        <button
+                          onClick={handleSubmitBid}
+                          disabled={submittingBid || !bidComment.trim()}
+                          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 rounded-lg transition"
+                        >
+                          {submittingBid ? 'Отправка...' : 'Отправить ставку'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

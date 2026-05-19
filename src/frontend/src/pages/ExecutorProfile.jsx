@@ -3,6 +3,20 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { userAPI, imageAPI, orderAPI } from '../services/api'
 
+// Helper function to fix MinIO URL port
+const fixAvatarUrl = (url) => {
+  if (!url) return null
+  let fixedUrl = url
+  // Replace frontend port 5731 with MinIO port 9000
+  fixedUrl = fixedUrl.replace(':5731/', ':9000/')
+  // Ensure http:// prefix exists
+  if (!fixedUrl.startsWith('http://') && !fixedUrl.startsWith('https://')) {
+    fixedUrl = 'http://' + fixedUrl
+  }
+  console.log('Converted avatar URL from', url, 'to', fixedUrl)
+  return fixedUrl
+}
+
 export default function ExecutorProfile() {
   const { user, logout } = useAuth()
   const { userId } = useParams()
@@ -18,7 +32,7 @@ export default function ExecutorProfile() {
   })
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
-  const [avatarPreview, setAvatarPreview] = useState(user?.avatar_url || null)
+  const [avatarPreview, setAvatarPreview] = useState(fixAvatarUrl(user?.avatar_url) || null)
   const [userInfo, setUserInfo] = useState(user)
   const [completedOrders, setCompletedOrders] = useState([])
   const [loadingOrders, setLoadingOrders] = useState(false)
@@ -33,7 +47,7 @@ export default function ExecutorProfile() {
       const response = await userAPI.getUser(profileUserId)
       setUserInfo(response.data)
       if (response.data.avatar_url) {
-        setAvatarPreview(imageAPI.transformAvatarUrl(response.data.avatar_url, profileUserId))
+        setAvatarPreview(fixAvatarUrl(response.data.avatar_url))
       }
       if (response.data.description) {
         setProfile({ description: response.data.description })
@@ -75,7 +89,10 @@ export default function ExecutorProfile() {
     try {
       const response = await imageAPI.uploadAvatar(file)
       const avatarUrl = response.data.url_avatar || response.data.avatar_url
-      setAvatarPreview(avatarUrl)
+      const fixedUrl = fixAvatarUrl(avatarUrl)
+      setAvatarPreview(fixedUrl)
+      // Reload user profile to get updated avatar_url
+      await loadUserProfile()
       setMessage('Аватар загружен')
       setTimeout(() => setMessage(''), 3000)
     } catch (error) {
@@ -130,30 +147,12 @@ export default function ExecutorProfile() {
             </h1>
           </div>
           <div className="flex gap-4 items-center">
-            {/* Avatar Circle */}
-            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold overflow-hidden">
-              {avatarPreview ? (
-                <img
-                  src={avatarPreview}
-                  alt="Avatar"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    // If image fails to load, show first letter
-                    e.target.style.display = 'none'
-                  }}
-                />
-              ) : null}
-              {!avatarPreview && (
-                <span>{userInfo?.username?.[0]?.toUpperCase() || '?'}</span>
-              )}
-            </div>
-
             {isOwnProfile && (
               <button
                 onClick={() => navigate('/executor-home')}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition"
               >
-                Мои заказы
+                Список Заказов
               </button>
             )}
             {isOwnProfile && (
@@ -228,30 +227,6 @@ export default function ExecutorProfile() {
                   Редактировать профиль
                 </h3>
                 <form onSubmit={handleProfileUpdate} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Имя пользователя
-                    </label>
-                    <input
-                      type="text"
-                      value={userInfo?.username || ''}
-                      disabled
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={userInfo?.email || ''}
-                      disabled
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed"
-                    />
-                  </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Описание
