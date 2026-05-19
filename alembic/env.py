@@ -3,12 +3,12 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from src.config import settings
-from src.database import Base
+from src.backend.config import settings
+from src.backend.database import Base
 
-from src.models.auth import User  # noqa
-from src.models.order import Order  # noqa
-from src.models.bid import Bid  # noqa
+from src.backend.models.auth import User  # noqa
+from src.backend.models.order import Order  # noqa
+from src.backend.models.bid import Bid  # noqa
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
